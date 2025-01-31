@@ -1,3 +1,17 @@
-"scripts": {
-  "start": "node bot.js"
+{
+  "name": "assistant-ai",
+  "version": "1.0.0",
+  "description": "Bot do Telegram integrado com OpenAI",
+  "main": "bot.js",
+  "scripts": {
+    "start": "node bot.js"
+  },
+  "dependencies": {
+    "dotenv": "^16.0.0",
+    "node-telegram-bot-api": "^0.57.0",
+    "openai": "^4.82.0"
+  },
+  "engines": {
+    "node": "16.x"
+  }
 }
