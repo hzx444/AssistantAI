@@ -1,6 +1,3 @@
-
-
-
 require("dotenv").config();
 const OpenAI = require("openai");
 const TelegramBot = require("node-telegram-bot-api");
@@ -13,17 +10,19 @@ mercadopago.configure({
 });
 
 // Função para gerar link de pagamento
-async function gerarLinkPagamento(valor, descricao, emailUsuario) {
+async function gerarLinkPagamento(valor, descricao, emailUsuario, metodoPagamento) {
   try {
     console.log("Gerando link de pagamento...");
     console.log("Valor:", valor);
     console.log("Descrição:", descricao);
     console.log("Email do usuário:", emailUsuario);
+    console.log("Método de pagamento:", metodoPagamento);
 
+    // Configuração do pagamento com base no método escolhido
     const paymentData = {
       transaction_amount: valor,
       description: descricao,
-      payment_method_id: "pix", // Método de pagamento (PIX)
+      payment_method_id: metodoPagamento, // Escolher entre "pix" ou "credit_card"
       payer: {
         email: emailUsuario, // Email do usuário
       },
@@ -111,11 +110,12 @@ bot.on("message", async (msg) => {
 
     // Comando para gerar link de pagamento
     if (text.startsWith("/pagar")) {
-      const valor = 10.0; // Valor do pagamento
-      const descricao = "Acesso ao bot por 30 dias"; // Descrição do pagamento
+      const valor = 9.90; // Valor do pagamento (alterado)
+      const descricao = "Acesso ao bot por 7 dias"; // Descrição do pagamento
       const emailUsuario = msg.from.email || "email_do_usuario@example.com"; // Tenta capturar o email do usuário
+      const metodoPagamento = "pix"; // Aqui você pode mudar para "credit_card" ou "pix"
 
-      gerarLinkPagamento(valor, descricao, emailUsuario)
+      gerarLinkPagamento(valor, descricao, emailUsuario, metodoPagamento)
         .then((linkPagamento) => {
           if (linkPagamento) {
             bot.sendMessage(chatId, `Clique no link para pagar: ${linkPagamento}`);
@@ -156,11 +156,11 @@ bot.onText(/\/start/, (msg) => {
     reply_markup: {
       inline_keyboard: [
         [
-          { text: "Plano Semanal - R$ 10,00", callback_data: "plano_semanal" },
-          { text: "Plano Mensal - R$ 30,00", callback_data: "plano_mensal" },
+          { text: "Plano Semanal - R$ 9,90", callback_data: "plano_semanal" },
+          { text: "Plano Mensal - R$ 19,90", callback_data: "plano_mensal" },
         ],
         [
-          { text: "Plano Trimestral - R$ 80,00", callback_data: "plano_trimestral" },
+          { text: "Plano Trimestral - R$ 39,90", callback_data: "plano_trimestral" },
         ],
       ],
     },
@@ -178,23 +178,25 @@ bot.on("callback_query", async (callbackQuery) => {
   let valor, descricao, diasValidade;
   switch (plano) {
     case "plano_semanal":
-      valor = 9.90;
+      valor = 9.90; // Novo valor semanal
       descricao = "Plano Semanal";
       diasValidade = 7;
       break;
     case "plano_mensal":
-      valor = 19.90;
+      valor = 19.90; // Novo valor mensal
       descricao = "Plano Mensal";
       diasValidade = 30;
       break;
     case "plano_trimestral":
-      valor = 39.90;
+      valor = 39.90; // Novo valor trimestral
       descricao = "Plano Trimestral";
       diasValidade = 90;
       break;
   }
 
-  const linkPagamento = await gerarLinkPagamento(valor, descricao, "email_do_usuario@example.com");
+  const metodoPagamento = "credit_card"; // Defina como "pix" ou "credit_card" dependendo da preferência
+
+  const linkPagamento = await gerarLinkPagamento(valor, descricao, "email_do_usuario@example.com", metodoPagamento);
   if (linkPagamento) {
     bot.sendMessage(chatId, `Clique no link para pagar: ${linkPagamento}`);
     salvarUsuario(userId, descricao, diasValidade); // Salva os dados do usuário
