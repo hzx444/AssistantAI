@@ -1,11 +1,13 @@
-// Importando a biblioteca
-const TelegramBot = require('node-telegram-bot-api');
+require("dotenv").config();
+const OpenAI = require("openai");
+const TelegramBot = require("node-telegram-bot-api");
+const mercadopago = require("mercadopago");
+const db = require("./database"); // Importa o banco de dados
 
-// Definindo o token do bot (use seu próprio token)
-const token = 'SEU_TOKEN_AQUI';
-
-// Criando a instância do bot
-const bot = new TelegramBot(token, { polling: true });
+// Configura o acesso ao Mercado Pago
+mercadopago.configure({
+  access_token: process.env.MERCADOPAGO_ACCESS_TOKEN,
+});
 
 // Função para gerar link de pagamento
 async function gerarLinkPagamento(valor, descricao, emailUsuario, metodoPagamento) {
@@ -16,15 +18,10 @@ async function gerarLinkPagamento(valor, descricao, emailUsuario, metodoPagament
     console.log("Email do usuário:", emailUsuario);
     console.log("Método de pagamento:", metodoPagamento);
 
-    // Verifica se o valor foi passado corretamente
-    if (!valor || valor <= 0) {
-      throw new Error("Valor da transação inválido");
-    }
-
     const paymentData = {
-      transaction_amount: valor, // Passando o valor corretamente
+      transaction_amount: valor,
       description: descricao,
-      payment_method_id: metodoPagamento, // Método de pagamento escolhido
+      payment_method_id: metodoPagamento, // Método de pagamento (PIX ou Cartão de Crédito)
       payer: {
         email: emailUsuario, // Email do usuário
       },
@@ -37,19 +34,12 @@ async function gerarLinkPagamento(valor, descricao, emailUsuario, metodoPagament
     console.log("Resposta do Mercado Pago:", response);
 
     // Verifica se o link de pagamento está na resposta
-    if (response.body && response.body.init_point) {
-      const linkPagamento = response.body.init_point; // Link do pagamento
-
-      // Se o pagamento for via PIX, vamos retornar o QR Code
-      if (metodoPagamento === 'pix' && response.body.point_of_interaction) {
-        const qrCode = response.body.point_of_interaction.qr_code;
-        return qrCode; // Retorna o QR Code para o PIX
-      }
-
+    if (response.body && response.body.point_of_interaction && response.body.point_of_interaction.transaction_data) {
+      const linkPagamento = response.body.point_of_interaction.transaction_data.ticket_url;
       console.log("Link de pagamento:", linkPagamento);
       return linkPagamento;
     } else {
-      console.error("Link de pagamento não encontrado na resposta:", response.body);
+      console.error("Erro ao gerar link de pagamento:", response.body);
       return null;
     }
   } catch (error) {
@@ -57,6 +47,126 @@ async function gerarLinkPagamento(valor, descricao, emailUsuario, metodoPagament
     return null;
   }
 }
+
+// Função para verificar se o usuário tem acesso
+function verificarAcesso(userId, callback) {
+  const query = `SELECT * FROM usuarios WHERE userId = ? AND validoAte > datetime('now')`;
+  db.get(query, [userId], (err, row) => {
+    if (err) {
+      console.error("Erro ao verificar acesso:", err);
+      return callback(false);
+    }
+    callback(!!row);
+  });
+}
+
+// Função para salvar os dados do usuário
+function salvarUsuario(userId, plano, diasValidade) {
+  const dataPagamento = new Date().toISOString();
+  const validoAte = new Date(Date.now() + diasValidade * 24 * 60 * 60 * 1000).toISOString();
+
+  const query = `
+    INSERT INTO usuarios (userId, plano, dataPagamento, validoAte)
+    VALUES (?, ?, ?, ?)
+    ON CONFLICT(userId) DO UPDATE SET
+      plano = excluded.plano,
+      dataPagamento = excluded.dataPagamento,
+      validoAte = excluded.validoAte
+  `;
+
+  db.run(query, [userId, plano, dataPagamento, validoAte], (err) => {
+    if (err) {
+      console.error("Erro ao salvar usuário:", err);
+    } else {
+      console.log(`Usuário ${userId} salvo com sucesso.`);
+    }
+  });
+}
+
+// Criar instância do bot do Telegram
+const bot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN, { polling: true });
+
+// Criar instância da OpenAI
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY, // Chave da API OpenAI
+});
+
+// Quando o bot receber uma mensagem
+bot.on("message", async (msg) => {
+  const chatId = msg.chat.id;
+  const userId = msg.from.id.toString(); // Captura o ID do usuário
+  const text = msg.text;
+
+  // Verifica se o usuário tem acesso
+  verificarAcesso(userId, (temAcesso) => {
+    if (!temAcesso) {
+      return bot.sendMessage(chatId, "Você não tem acesso ao bot. Use /start para escolher um plano.");
+    }
+
+    if (!text) {
+      return bot.sendMessage(chatId, "Envie uma mensagem válida.");
+    }
+
+    // Comando para gerar link de pagamento
+    if (text.startsWith("/pagar")) {
+      const valor = 10.0; // Valor do pagamento
+      const descricao = "Acesso ao bot por 30 dias"; // Descrição do pagamento
+      const emailUsuario = msg.from.email || "email_do_usuario@example.com"; // Tenta capturar o email do usuário
+      const metodoPagamento = "pix"; // Aqui você pode alterar para "credit_card" se desejar pagamento via cartão
+
+      gerarLinkPagamento(valor, descricao, emailUsuario, metodoPagamento)
+        .then((linkPagamento) => {
+          if (linkPagamento) {
+            bot.sendMessage(chatId, `Clique no link para pagar: ${linkPagamento}`);
+          } else {
+            bot.sendMessage(chatId, "Erro ao gerar o link de pagamento. Tente novamente.");
+          }
+        })
+        .catch((error) => {
+          console.error("Erro ao gerar link de pagamento:", error);
+          bot.sendMessage(chatId, "Erro ao processar o pagamento. Tente novamente.");
+        });
+      return;
+    }
+
+    // Resposta padrão usando a OpenAI
+    openai.chat.completions
+      .create({
+        model: "gpt-4-turbo",
+        messages: [{ role: "user", content: text }],
+      })
+      .then((response) => {
+        const message = response.choices[0].message.content;
+        bot.sendMessage(chatId, message);
+      })
+      .catch((error) => {
+        console.error("Erro ao conectar com a OpenAI:", error);
+        bot.sendMessage(chatId, "Erro ao processar a resposta. Tente novamente.");
+      });
+  });
+});
+
+// Menu de planos no comando /start
+bot.onText(/\/start/, (msg) => {
+  const chatId = msg.chat.id;
+  const userId = msg.from.id.toString();
+
+  const options = {
+    reply_markup: {
+      inline_keyboard: [
+        [
+          { text: "Plano Semanal - R$ 9,90", callback_data: "plano_semanal" },
+          { text: "Plano Mensal - R$ 19,90", callback_data: "plano_mensal" },
+        ],
+        [
+          { text: "Plano Trimestral - R$ 39,90", callback_data: "plano_trimestral" },
+        ],
+      ],
+    },
+  };
+
+  bot.sendMessage(chatId, "Escolha o melhor plano para você e libere o assistente AI:", options);
+});
 
 // Tratar a escolha do plano
 bot.on("callback_query", async (callbackQuery) => {
@@ -83,36 +193,19 @@ bot.on("callback_query", async (callbackQuery) => {
       break;
   }
 
-  // Perguntar como o usuário quer pagar
-  bot.sendMessage(chatId, "Escolha o método de pagamento:", {
-    reply_markup: {
-      inline_keyboard: [
-        [{ text: "PIX", callback_data: "pix" }],
-        [{ text: "Cartão", callback_data: "cartao" }],
-      ],
-    },
-  }).then(() => {
-    // Aguardar a escolha de pagamento
-    bot.once("callback_query", (paymentChoice) => {
-      const metodoPagamento = paymentChoice.data === "cartao" ? "credit_card" : "pix";
-
-      // Verifica se o valor é passado corretamente
-      if (!valor || valor <= 0) {
-        bot.sendMessage(chatId, "Erro: O valor de pagamento não foi definido corretamente.");
-        return;
+  const metodoPagamento = "pix"; // Mude para "credit_card" para cartão de crédito
+  const linkPagamento = await gerarLinkPagamento(valor, descricao, "email_do_usuario@example.com", metodoPagamento);
+  
+  if (linkPagamento) {
+    bot.sendMessage(chatId, `Clique abaixo para adquirir o plano:`, {
+      reply_markup: {
+        inline_keyboard: [
+          [{ text: "Clique e Adquira Agora!", url: linkPagamento }]
+        ]
       }
-
-      gerarLinkPagamento(valor, descricao, "email_do_usuario@example.com", metodoPagamento)
-        .then((linkPagamento) => {
-          if (linkPagamento) {
-            if (metodoPagamento === 'pix') {
-              // Envia o QR Code do Pix
-              bot.sendMessage(chatId, "Escaneie o QR Code abaixo para realizar o pagamento:", {
-                reply_markup: {
-                  inline_keyboard: [
-                    [{ text: "Escanear QR Code", url: linkPagamento }],
-                  ],
-                },
-              });
-            } else {
-              // Envia o link do pagament
+    });
+    salvarUsuario(userId, descricao, diasValidade); // Salva os dados do usuário
+  } else {
+    bot.sendMessage(chatId, "Erro ao gerar o link de pagamento. Tente novamente.");
+  }
+});
