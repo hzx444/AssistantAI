@@ -2,6 +2,7 @@ require("dotenv").config();
 const OpenAI = require("openai");
 const TelegramBot = require("node-telegram-bot-api");
 const mercadopago = require("mercadopago");
+const db = require("./database"); // Importa o banco de dados
 
 // Configura o acesso ao Mercado Pago
 mercadopago.configure({
@@ -46,6 +47,18 @@ async function gerarLinkPagamento(valor, descricao, emailUsuario) {
   }
 }
 
+// Função para verificar se o usuário tem acesso
+function verificarAcesso(userId, callback) {
+  const query = `SELECT * FROM usuarios WHERE userId = ? AND validoAte > datetime('now')`;
+  db.get(query, [userId], (err, row) => {
+    if (err) {
+      console.error("Erro ao verificar acesso:", err);
+      return callback(false);
+    }
+    callback(!!row);
+  });
+}
+
 // Criar instância do bot do Telegram
 const bot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN, { polling: true });
 
@@ -57,38 +70,46 @@ const openai = new OpenAI({
 // Quando o bot receber uma mensagem
 bot.on("message", async (msg) => {
   const chatId = msg.chat.id;
+  const userId = msg.from.id.toString(); // Captura o ID do usuário
   const text = msg.text;
 
-  if (!text) {
-    return bot.sendMessage(chatId, "Envie uma mensagem válida.");
-  }
-
-  // Comando para gerar link de pagamento
-  if (text.startsWith("/pagar")) {
-    const valor = 10.0; // Valor do pagamento
-    const descricao = "Acesso ao bot por 30 dias"; // Descrição do pagamento
-    const emailUsuario = msg.from.email || "email_do_usuario@example.com"; // Tenta capturar o email do usuário
-
-    const linkPagamento = await gerarLinkPagamento(valor, descricao, emailUsuario);
-    if (linkPagamento) {
-      bot.sendMessage(chatId, `Clique no link para pagar: ${linkPagamento}`);
-    } else {
-      bot.sendMessage(chatId, "Erro ao gerar o link de pagamento. Tente novamente.");
+  // Verifica se o usuário tem acesso
+  verificarAcesso(userId, (temAcesso) => {
+    if (!temAcesso) {
+      return bot.sendMessage(chatId, "Você não tem acesso ao bot. Use /start para escolher um plano.");
     }
-    return;
-  }
 
-  // Resposta padrão usando a OpenAI
-  try {
-    const response = await openai.chat.completions.create({
-      model: "gpt-4-turbo",
-      messages: [{ role: "user", content: text }],
-    });
+    if (!text) {
+      return bot.sendMessage(chatId, "Envie uma mensagem válida.");
+    }
 
-    const message = response.choices[0].message.content;
-    bot.sendMessage(chatId, message);
-  } catch (error) {
-    console.error("Erro ao conectar com a OpenAI:", error);
-    bot.sendMessage(chatId, "Erro ao processar a resposta. Tente novamente.");
-  }
+    // Comando para gerar link de pagamento
+    if (text.startsWith("/pagar")) {
+      const valor = 10.0; // Valor do pagamento
+      const descricao = "Acesso ao bot por 30 dias"; // Descrição do pagamento
+      const emailUsuario = msg.from.email || "email_do_usuario@example.com"; // Tenta capturar o email do usuário
+
+      const linkPagamento = await gerarLinkPagamento(valor, descricao, emailUsuario);
+      if (linkPagamento) {
+        bot.sendMessage(chatId, `Clique no link para pagar: ${linkPagamento}`);
+      } else {
+        bot.sendMessage(chatId, "Erro ao gerar o link de pagamento. Tente novamente.");
+      }
+      return;
+    }
+
+    // Resposta padrão usando a OpenAI
+    try {
+      const response = await openai.chat.completions.create({
+        model: "gpt-4-turbo",
+        messages: [{ role: "user", content: text }],
+      });
+
+      const message = response.choices[0].message.content;
+      bot.sendMessage(chatId, message);
+    } catch (error) {
+      console.error("Erro ao conectar com a OpenAI:", error);
+      bot.sendMessage(chatId, "Erro ao processar a resposta. Tente novamente.");
+    }
+  });
 });
