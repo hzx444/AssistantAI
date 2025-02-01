@@ -97,12 +97,10 @@ bot.onText(/\/start/, (msg) => {
           { text: "Plano Semanal - R$ 9,90", url: "https://www.mercadopago.com.br/subscriptions/checkout?preapproval_plan_id=2c93808494b46ea50194bffed1b10657" }, // Substitua pelo link real
         ],
         [
-          { text: "Plano Mensal - R$ 19,90", url: "https://www.mercadopago.com.br/subscriptions/checkout?preapproval_plan_id=2c93808494bfe9840194c00563960002
-" }, // Substitua pelo link real
+          { text: "Plano Mensal - R$ 19,90", url: "https://www.mercadopago.com.br/subscriptions/checkout?preapproval_plan_id=2c93808494bfe9840194c00563960002" }, // Substitua pelo link real
         ],
         [
-          { text: "Plano Trimestral - R$ 39,90", url: "https://www.mercadopago.com.br/subscriptions/checkout?preapproval_plan_id=2c93808494b8c5eb0194c006404003f4
-" }, // Substitua pelo link real
+          { text: "Plano Trimestral - R$ 39,90", url: "https://www.mercadopago.com.br/subscriptions/checkout?preapproval_plan_id=2c93808494b8c5eb0194c006404003f4" }, // Substitua pelo link real
         ],
       ],
     },
