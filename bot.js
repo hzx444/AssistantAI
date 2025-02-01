@@ -9,7 +9,7 @@ mercadopago.configure({
   access_token: process.env.MERCADOPAGO_ACCESS_TOKEN,
 });
 
-// Função para gerar link de pagamento (PIX ou Cartão)
+// Função para gerar link de pagamento
 async function gerarLinkPagamento(valor, descricao, emailUsuario, metodoPagamento) {
   try {
     console.log("Gerando link de pagamento...");
@@ -21,7 +21,7 @@ async function gerarLinkPagamento(valor, descricao, emailUsuario, metodoPagament
     const paymentData = {
       transaction_amount: valor,
       description: descricao,
-      payment_method_id: metodoPagamento, // PIX ou credit_card
+      payment_method_id: metodoPagamento, // Método de pagamento escolhido
       payer: {
         email: emailUsuario, // Email do usuário
       },
@@ -34,11 +34,8 @@ async function gerarLinkPagamento(valor, descricao, emailUsuario, metodoPagament
     console.log("Resposta do Mercado Pago:", response);
 
     // Verifica se o link de pagamento está na resposta
-    if (response.body && response.body.point_of_interaction && response.body.point_of_interaction.transaction_data) {
-      const linkPagamento = metodoPagamento === "pix" 
-        ? response.body.point_of_interaction.transaction_data.ticket_url // Link do PIX
-        : response.body.transaction_details.external_resource_url; // Link do Cartão
-
+    if (response.body && response.body.init_point) {
+      const linkPagamento = response.body.init_point; // Link do pagamento
       console.log("Link de pagamento:", linkPagamento);
       return linkPagamento;
     } else {
@@ -116,26 +113,28 @@ bot.on("message", async (msg) => {
       const descricao = "Acesso ao bot por 30 dias"; // Descrição do pagamento
       const emailUsuario = msg.from.email || "email_do_usuario@example.com"; // Tenta capturar o email do usuário
 
-      gerarLinkPagamento(valor, descricao, emailUsuario, "pix") // Usando PIX por padrão
-        .then((linkPagamento) => {
-          if (linkPagamento) {
-            const botao = {
-              reply_markup: {
-                inline_keyboard: [
-                  [{ text: "Clique e Adquira Agora Mesmo!", url: linkPagamento }],
-                ],
-              },
-            };
-            bot.sendMessage(chatId, `Clique abaixo para pagar ${descricao}:`, botao);
-          } else {
-            bot.sendMessage(chatId, "Erro ao gerar o link de pagamento. Tente novamente.");
-          }
-        })
-        .catch((error) => {
-          console.error("Erro ao gerar link de pagamento:", error);
-          bot.sendMessage(chatId, "Erro ao processar o pagamento. Tente novamente.");
+      // Pergunta como o usuário deseja pagar
+      return bot.sendMessage(chatId, "Escolha o método de pagamento: PIX ou Cartão.")
+        .then(() => {
+          // Aguardar a resposta do usuário
+          bot.once('message', (response) => {
+            const metodoPagamento = response.text.toLowerCase() === "cartão" ? "credit_card" : "pix";
+            gerarLinkPagamento(valor, descricao, emailUsuario, metodoPagamento)
+              .then((linkPagamento) => {
+                if (linkPagamento) {
+                  bot.sendMessage(chatId, `Clique abaixo para adquirir o plano:`, {
+                    reply_markup: {
+                      inline_keyboard: [
+                        [{ text: "Clique aqui e adquira agora!", url: linkPagamento }],
+                      ],
+                    },
+                  });
+                } else {
+                  bot.sendMessage(chatId, "Erro ao gerar o link de pagamento. Tente novamente.");
+                }
+              });
+          });
         });
-      return;
     }
 
     // Resposta padrão usando a OpenAI
@@ -202,19 +201,25 @@ bot.on("callback_query", async (callbackQuery) => {
       break;
   }
 
-  // Gerar o link de pagamento (com PIX por padrão)
-  const linkPagamento = await gerarLinkPagamento(valor, descricao, "email_do_usuario@example.com", "pix");
-  if (linkPagamento) {
-    const botao = {
-      reply_markup: {
-        inline_keyboard: [
-          [{ text: "Clique e Adquira Agora Mesmo!", url: linkPagamento }],
-        ],
-      },
-    };
-    bot.sendMessage(chatId, `Clique abaixo para pagar ${descricao}:`, botao);
-    salvarUsuario(userId, descricao, diasValidade); // Salva os dados do usuário
-  } else {
-    bot.sendMessage(chatId, "Erro ao gerar o link de pagamento. Tente novamente.");
-  }
+  // Perguntar como o usuário quer pagar
+  bot.sendMessage(chatId, "Escolha o método de pagamento: PIX ou Cartão.")
+    .then(() => {
+      bot.once('message', (response) => {
+        const metodoPagamento = response.text.toLowerCase() === "cartão" ? "credit_card" : "pix";
+        const linkPagamento = gerarLinkPagamento(valor, descricao, "email_do_usuario@example.com", metodoPagamento);
+        
+        if (linkPagamento) {
+          bot.sendMessage(chatId, `Clique abaixo para adquirir o plano:`, {
+            reply_markup: {
+              inline_keyboard: [
+                [{ text: "Clique aqui e adquira agora!", url: linkPagamento }],
+              ],
+            },
+          });
+          salvarUsuario(userId, descricao, diasValidade); // Salva os dados do usuário
+        } else {
+          bot.sendMessage(chatId, "Erro ao gerar o link de pagamento. Tente novamente.");
+        }
+      });
+    });
 });
