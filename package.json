@@ -1,14 +1,17 @@
 {
-  "name": "meu-bot",
+  "name": "assistant-ai",
   "version": "1.0.0",
-  "description": "Bot do Telegram com OpenAI",
+  "description": "Bot do Telegram integrado com OpenAI",
   "main": "bot.js",
   "scripts": {
     "start": "node bot.js"
   },
   "dependencies": {
-    "node-telegram-bot-api": "^0.51.0",
-    "openai": "^3.1.0",
-    "dotenv": "^16.0.0"
+    "dotenv": "^16.0.0",
+    "node-telegram-bot-api": "^0.57.0",
+    "openai": "^4.82.0"
+  },
+  "engines": {
+    "node": "16.x"
   }
 }
