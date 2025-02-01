@@ -10,17 +10,18 @@ mercadopago.configure({
 });
 
 // Função para gerar link de pagamento
-async function gerarLinkPagamento(valor, descricao, emailUsuario) {
+async function gerarLinkPagamento(valor, descricao, emailUsuario, metodoPagamento) {
   try {
     console.log("Gerando link de pagamento...");
     console.log("Valor:", valor);
     console.log("Descrição:", descricao);
     console.log("Email do usuário:", emailUsuario);
+    console.log("Método de pagamento:", metodoPagamento);
 
     const paymentData = {
       transaction_amount: valor,
       description: descricao,
-      payment_method_id: "pix", // Método de pagamento (PIX)
+      payment_method_id: metodoPagamento, // Método de pagamento (PIX ou Cartão de Crédito)
       payer: {
         email: emailUsuario, // Email do usuário
       },
@@ -38,7 +39,7 @@ async function gerarLinkPagamento(valor, descricao, emailUsuario) {
       console.log("Link de pagamento:", linkPagamento);
       return linkPagamento;
     } else {
-      console.error("Link de pagamento não encontrado na resposta:", response.body);
+      console.error("Erro ao gerar link de pagamento:", response.body);
       return null;
     }
   } catch (error) {
@@ -108,11 +109,12 @@ bot.on("message", async (msg) => {
 
     // Comando para gerar link de pagamento
     if (text.startsWith("/pagar")) {
-      const valor = 9.90; // Valor do pagamento (alterado)
-      const descricao = "Acesso ao bot por 7 dias"; // Descrição do pagamento
+      const valor = 10.0; // Valor do pagamento
+      const descricao = "Acesso ao bot por 30 dias"; // Descrição do pagamento
       const emailUsuario = msg.from.email || "email_do_usuario@example.com"; // Tenta capturar o email do usuário
+      const metodoPagamento = "pix"; // Aqui você pode alterar para "credit_card" se desejar pagamento via cartão
 
-      gerarLinkPagamento(valor, descricao, emailUsuario)
+      gerarLinkPagamento(valor, descricao, emailUsuario, metodoPagamento)
         .then((linkPagamento) => {
           if (linkPagamento) {
             bot.sendMessage(chatId, `Clique no link para pagar: ${linkPagamento}`);
@@ -175,25 +177,33 @@ bot.on("callback_query", async (callbackQuery) => {
   let valor, descricao, diasValidade;
   switch (plano) {
     case "plano_semanal":
-      valor = 9.90; // Novo valor semanal
+      valor = 9.90;
       descricao = "Plano Semanal";
       diasValidade = 7;
       break;
     case "plano_mensal":
-      valor = 19.90; // Novo valor mensal
+      valor = 19.90;
       descricao = "Plano Mensal";
       diasValidade = 30;
       break;
     case "plano_trimestral":
-      valor = 39.90; // Novo valor trimestral
+      valor = 39.90;
       descricao = "Plano Trimestral";
       diasValidade = 90;
       break;
   }
 
-  const linkPagamento = await gerarLinkPagamento(valor, descricao, "email_do_usuario@example.com");
+  const metodoPagamento = "pix"; // Mude para "credit_card" para cartão de crédito
+  const linkPagamento = await gerarLinkPagamento(valor, descricao, "email_do_usuario@example.com", metodoPagamento);
+  
   if (linkPagamento) {
-    bot.sendMessage(chatId, `Clique no link para pagar: ${linkPagamento}`);
+    bot.sendMessage(chatId, `Clique abaixo para adquirir o plano:`, {
+      reply_markup: {
+        inline_keyboard: [
+          [{ text: "Clique e Adquira Agora!", url: linkPagamento }]
+        ]
+      }
+    });
     salvarUsuario(userId, descricao, diasValidade); // Salva os dados do usuário
   } else {
     bot.sendMessage(chatId, "Erro ao gerar o link de pagamento. Tente novamente.");
