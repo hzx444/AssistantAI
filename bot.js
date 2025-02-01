@@ -1,5 +1,3 @@
-// bot.js
-
 require("dotenv").config();
 const OpenAI = require("openai");
 const TelegramBot = require("node-telegram-bot-api");
@@ -52,7 +50,7 @@ bot.on("message", async (msg) => {
   if (text.startsWith("/pagar")) {
     const valor = 10.0; // Valor do pagamento
     const descricao = "Acesso ao bot por 30 dias"; // Descrição do pagamento
-    const emailUsuario = "email_do_usuario@example.com"; // Substitua pelo email do usuário
+    const emailUsuario = msg.from.email || "email_do_usuario@example.com"; // Tenta capturar o email do usuário
 
     const linkPagamento = await gerarLinkPagamento(valor, descricao, emailUsuario);
     if (linkPagamento) {
