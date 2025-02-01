@@ -5,7 +5,7 @@ const TelegramBot = require("node-telegram-bot-api");
 const mercadopago = require("mercadopago");
 const db = require("./database");
 
-// Configura o acesso ao Mercado Pago
+// Configuração do Mercado Pago
 mercadopago.configure({
   access_token: process.env.MERCADOPAGO_ACCESS_TOKEN,
 });
@@ -23,20 +23,18 @@ function verificarAcesso(userId, callback) {
 }
 
 // Função para salvar os dados do usuário
-function salvarUsuario(userId, plano, diasValidade) {
-  const dataPagamento = new Date().toISOString();
+function salvarUsuario(userId, preapprovalId, plano, diasValidade) {
   const validoAte = new Date(Date.now() + diasValidade * 24 * 60 * 60 * 1000).toISOString();
-
   const query = `
-    INSERT INTO usuarios (userId, plano, dataPagamento, validoAte)
+    INSERT INTO usuarios (userId, preapprovalId, plano, validoAte)
     VALUES (?, ?, ?, ?)
     ON CONFLICT(userId) DO UPDATE SET
+      preapprovalId = excluded.preapprovalId,
       plano = excluded.plano,
-      dataPagamento = excluded.dataPagamento,
       validoAte = excluded.validoAte
   `;
 
-  db.run(query, [userId, plano, dataPagamento, validoAte], (err) => {
+  db.run(query, [userId, preapprovalId, plano, validoAte], (err) => {
     if (err) {
       console.error("Erro ao salvar usuário:", err);
     } else {
@@ -49,99 +47,57 @@ function salvarUsuario(userId, plano, diasValidade) {
 const bot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN, { polling: true });
 
 // Criar instância da OpenAI
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-// Quando o bot receber uma mensagem
-bot.on("message", async (msg) => {
+// Comando /start com menu de planos
+bot.onText(/\/start/, (msg) => {
   const chatId = msg.chat.id;
   const userId = msg.from.id.toString();
-  const text = msg.text;
 
-  // Verifica se o usuário tem acesso
-  verificarAcesso(userId, (temAcesso) => {
-    if (!temAcesso) {
-      return bot.sendMessage(chatId, "Você não tem acesso ao bot. Use /start para escolher um plano.");
-    }
+  const planos = {
+    "Plano Semanal - R$ 9,90": "2c93808494b46ea50194bffed1b10657",
+    "Plano Mensal - R$ 19,90": "2c93808494bfe9840194c00563960002",
+    "Plano Trimestral - R$ 39,90": "2c93808494b8c5eb0194c006404003f4",
+  };
 
-    if (!text) {
-      return bot.sendMessage(chatId, "Envie uma mensagem válida.");
-    }
+  const botoes = Object.entries(planos).map(([nome, id]) => [{
+    text: nome,
+    url: `https://www.mercadopago.com.br/subscriptions/checkout?preapproval_plan_id=${id}`
+  }]);
 
-    // Resposta padrão usando a OpenAI
-    openai.chat.completions
-      .create({
-        model: "gpt-4-turbo",
-        messages: [{ role: "user", content: text }],
-      })
-      .then((response) => {
-        const message = response.choices[0].message.content;
-        bot.sendMessage(chatId, message);
-      })
-      .catch((error) => {
-        console.error("Erro ao conectar com a OpenAI:", error);
-        bot.sendMessage(chatId, "Erro ao processar a resposta. Tente novamente.");
-      });
+  bot.sendMessage(chatId, "Escolha o melhor plano para liberar o assistente:", {
+    reply_markup: { inline_keyboard: botoes }
   });
 });
 
-// Menu de planos no comando /start
-bot.onText(/\/start/, (msg) => {
-  const chatId = msg.chat.id;
-
-  const options = {
-    reply_markup: {
-      inline_keyboard: [
-        [
-          { text: "Plano Semanal - R$ 9,90", url: "https://www.mercadopago.com.br/subscriptions/checkout?preapproval_plan_id=2c93808494b46ea50194bffed1b10657" }, // Substitua pelo link real
-        ],
-        [
-          { text: "Plano Mensal - R$ 19,90", url: "https://www.mercadopago.com.br/subscriptions/checkout?preapproval_plan_id=2c93808494bfe9840194c00563960002" }, // Substitua pelo link real
-        ],
-        [
-          { text: "Plano Trimestral - R$ 39,90", url: "https://www.mercadopago.com.br/subscriptions/checkout?preapproval_plan_id=2c93808494b8c5eb0194c006404003f4" }, // Substitua pelo link real
-        ],
-      ],
-    },
-  };
-
-  bot.sendMessage(chatId, "Escolha o melhor plano para você e libere o assistente AI:", options);
-});
-
-// Configuração do webhook
+// Webhook para notificações do Mercado Pago
 const app = express();
 app.use(express.json());
 
-// Rota para receber notificações do Mercado Pago
 app.post("/webhook", async (req, res) => {
-  const { data } = req.body;
+  const { type, action, data } = req.body;
 
-  if (data && data.id) {
-    const paymentId = data.id;
-
+  if (type === "preapproval" && action === "updated" && data.id) {
     try {
-      // Verifica o status do pagamento
-      const payment = await mercadopago.payment.findById(paymentId);
-      const status = payment.body.status;
+      const preapproval = await mercadopago.preapproval.findById(data.id);
+      const status = preapproval.body.status;
+      const userId = preapproval.body.external_reference;
+      const plano = preapproval.body.reason;
 
-      if (status === "approved") {
-        const userId = payment.body.metadata.userId; // Adiciona o userId ao metadata
-        const plano = payment.body.description;
-        const diasValidade = plano === "Plano Semanal" ? 7 : plano === "Plano Mensal" ? 30 : 90;
-
-        // Salva os dados do usuário
-        salvarUsuario(userId, plano, diasValidade);
-
-        console.log(`Pagamento aprovado para o usuário ${userId}.`);
-        bot.sendMessage(userId, "Pagamento aprovado! Agora você tem acesso ao bot.");
+      if (status === "authorized") {
+        const diasValidade = plano.includes("Semanal") ? 7 : plano.includes("Mensal") ? 30 : 90;
+        salvarUsuario(userId, data.id, plano, diasValidade);
+        bot.sendMessage(userId, "✅ Pagamento aprovado! Seu acesso foi liberado.");
+      } else if (status === "cancelled" || status === "paused") {
+        db.run("DELETE FROM usuarios WHERE userId = ?", [userId], () => {
+          bot.sendMessage(userId, "🚫 Sua assinatura foi cancelada. Acesso revogado.");
+        });
       }
     } catch (error) {
       console.error("Erro ao processar webhook:", error);
     }
   }
-
-  res.status(200).send("OK");
+  res.sendStatus(200);
 });
 
 // Inicia o servidor
