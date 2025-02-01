@@ -19,6 +19,11 @@ const openai = new OpenAI({
 // Função para gerar link de pagamento
 async function gerarLinkPagamento(valor, descricao, emailUsuario) {
   try {
+    console.log("Gerando link de pagamento...");
+    console.log("Valor:", valor);
+    console.log("Descrição:", descricao);
+    console.log("Email do usuário:", emailUsuario);
+
     const paymentData = {
       transaction_amount: valor,
       description: descricao,
@@ -28,8 +33,12 @@ async function gerarLinkPagamento(valor, descricao, emailUsuario) {
       },
     };
 
+    console.log("Dados do pagamento:", paymentData);
+
     // Cria o pagamento
     const response = await mercadopago.payment.create(paymentData);
+    console.log("Resposta do Mercado Pago:", response);
+
     return response.body.init_point; // Retorna o link de pagamento
   } catch (error) {
     console.error("Erro ao gerar link de pagamento:", error);
