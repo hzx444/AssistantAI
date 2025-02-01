@@ -1,15 +1,4 @@
-require("dotenv").config();
-const OpenAI = require("openai");
-const TelegramBot = require("node-telegram-bot-api");
-const mercadopago = require("mercadopago");
-const db = require("./database"); // Importa o banco de dados
-
-// Configura o acesso ao Mercado Pago
-mercadopago.configure({
-  access_token: process.env.MERCADOPAGO_ACCESS_TOKEN,
-});
-
-// Função para gerar link de pagamento
+// Função para gerar o botão com o link de pagamento
 async function gerarLinkPagamento(valor, descricao, emailUsuario, metodoPagamento) {
   try {
     console.log("Gerando link de pagamento...");
@@ -49,127 +38,25 @@ async function gerarLinkPagamento(valor, descricao, emailUsuario, metodoPagament
   }
 }
 
-// Função para verificar se o usuário tem acesso
-function verificarAcesso(userId, callback) {
-  const query = `SELECT * FROM usuarios WHERE userId = ? AND validoAte > datetime('now')`;
-  db.get(query, [userId], (err, row) => {
-    if (err) {
-      console.error("Erro ao verificar acesso:", err);
-      return callback(false);
-    }
-    callback(!!row);
-  });
-}
-
-// Função para salvar os dados do usuário
-function salvarUsuario(userId, plano, diasValidade) {
-  const dataPagamento = new Date().toISOString();
-  const validoAte = new Date(Date.now() + diasValidade * 24 * 60 * 60 * 1000).toISOString();
-
-  const query = `
-    INSERT INTO usuarios (userId, plano, dataPagamento, validoAte)
-    VALUES (?, ?, ?, ?)
-    ON CONFLICT(userId) DO UPDATE SET
-      plano = excluded.plano,
-      dataPagamento = excluded.dataPagamento,
-      validoAte = excluded.validoAte
-  `;
-
-  db.run(query, [userId, plano, dataPagamento, validoAte], (err) => {
-    if (err) {
-      console.error("Erro ao salvar usuário:", err);
-    } else {
-      console.log(`Usuário ${userId} salvo com sucesso.`);
-    }
-  });
-}
-
-// Criar instância do bot do Telegram
-const bot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN, { polling: true });
-
-// Criar instância da OpenAI
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY, // Chave da API OpenAI
-});
-
-// Quando o bot receber uma mensagem
-bot.on("message", async (msg) => {
-  const chatId = msg.chat.id;
-  const userId = msg.from.id.toString(); // Captura o ID do usuário
-  const text = msg.text;
-
-  // Verifica se o usuário tem acesso
-  verificarAcesso(userId, (temAcesso) => {
-    if (!temAcesso) {
-      return bot.sendMessage(chatId, "Você não tem acesso ao bot. Use /start para escolher um plano.");
-    }
-
-    if (!text) {
-      return bot.sendMessage(chatId, "Envie uma mensagem válida.");
-    }
-
-    // Comando para gerar link de pagamento
-    if (text.startsWith("/pagar")) {
-      const valor = 9.90; // Valor do pagamento (alterado)
-      const descricao = "Acesso ao bot por 7 dias"; // Descrição do pagamento
-      const emailUsuario = msg.from.email || "email_do_usuario@example.com"; // Tenta capturar o email do usuário
-      const metodoPagamento = "pix"; // Aqui você pode mudar para "credit_card" ou "pix"
-
-      gerarLinkPagamento(valor, descricao, emailUsuario, metodoPagamento)
-        .then((linkPagamento) => {
-          if (linkPagamento) {
-            bot.sendMessage(chatId, `Clique no link para pagar: ${linkPagamento}`);
-          } else {
-            bot.sendMessage(chatId, "Erro ao gerar o link de pagamento. Tente novamente.");
-          }
-        })
-        .catch((error) => {
-          console.error("Erro ao gerar link de pagamento:", error);
-          bot.sendMessage(chatId, "Erro ao processar o pagamento. Tente novamente.");
-        });
-      return;
-    }
-
-    // Resposta padrão usando a OpenAI
-    openai.chat.completions
-      .create({
-        model: "gpt-4-turbo",
-        messages: [{ role: "user", content: text }],
-      })
-      .then((response) => {
-        const message = response.choices[0].message.content;
-        bot.sendMessage(chatId, message);
-      })
-      .catch((error) => {
-        console.error("Erro ao conectar com a OpenAI:", error);
-        bot.sendMessage(chatId, "Erro ao processar a resposta. Tente novamente.");
-      });
-  });
-});
-
-// Menu de planos no comando /start
-bot.onText(/\/start/, (msg) => {
-  const chatId = msg.chat.id;
-  const userId = msg.from.id.toString();
-
+// Função para enviar mensagem com botão de pagamento
+function enviarMensagemComBotao(chatId, linkPagamento) {
   const options = {
     reply_markup: {
       inline_keyboard: [
         [
-          { text: "Plano Semanal - R$ 9,90", callback_data: "plano_semanal" },
-          { text: "Plano Mensal - R$ 19,90", callback_data: "plano_mensal" },
-        ],
-        [
-          { text: "Plano Trimestral - R$ 39,90", callback_data: "plano_trimestral" },
+          {
+            text: "Clique e Adquira Agora!",  // Texto do botão
+            url: linkPagamento,               // Link de pagamento
+          },
         ],
       ],
     },
   };
 
-  bot.sendMessage(chatId, "Escolha o melhor plano para você e libere o assistente AI:", options);
-});
+  bot.sendMessage(chatId, "Clique no botão abaixo para concluir o pagamento:", options);
+}
 
-// Tratar a escolha do plano
+// No código onde você gera o link de pagamento, substitua a função de envio de mensagem:
 bot.on("callback_query", async (callbackQuery) => {
   const chatId = callbackQuery.message.chat.id;
   const userId = callbackQuery.from.id.toString();
@@ -198,7 +85,8 @@ bot.on("callback_query", async (callbackQuery) => {
 
   const linkPagamento = await gerarLinkPagamento(valor, descricao, "email_do_usuario@example.com", metodoPagamento);
   if (linkPagamento) {
-    bot.sendMessage(chatId, `Clique no link para pagar: ${linkPagamento}`);
+    // Aqui estamos usando a nova função para enviar o botão com o link
+    enviarMensagemComBotao(chatId, linkPagamento);
     salvarUsuario(userId, descricao, diasValidade); // Salva os dados do usuário
   } else {
     bot.sendMessage(chatId, "Erro ao gerar o link de pagamento. Tente novamente.");
