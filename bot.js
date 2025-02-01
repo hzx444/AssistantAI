@@ -114,27 +114,14 @@ bot.on("message", async (msg) => {
       const emailUsuario = msg.from.email || "email_do_usuario@example.com"; // Tenta capturar o email do usuário
 
       // Pergunta como o usuário deseja pagar
-      return bot.sendMessage(chatId, "Escolha o método de pagamento: PIX ou Cartão.")
-        .then(() => {
-          // Aguardar a resposta do usuário
-          bot.once('message', (response) => {
-            const metodoPagamento = response.text.toLowerCase() === "cartão" ? "credit_card" : "pix";
-            gerarLinkPagamento(valor, descricao, emailUsuario, metodoPagamento)
-              .then((linkPagamento) => {
-                if (linkPagamento) {
-                  bot.sendMessage(chatId, `Clique abaixo para adquirir o plano:`, {
-                    reply_markup: {
-                      inline_keyboard: [
-                        [{ text: "Clique aqui e adquira agora!", url: linkPagamento }],
-                      ],
-                    },
-                  });
-                } else {
-                  bot.sendMessage(chatId, "Erro ao gerar o link de pagamento. Tente novamente.");
-                }
-              });
-          });
-        });
+      return bot.sendMessage(chatId, "Escolha o método de pagamento:", {
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: "PIX", callback_data: "pix" }],
+            [{ text: "Cartão", callback_data: "cartao" }],
+          ],
+        },
+      });
     }
 
     // Resposta padrão usando a OpenAI
@@ -202,24 +189,33 @@ bot.on("callback_query", async (callbackQuery) => {
   }
 
   // Perguntar como o usuário quer pagar
-  bot.sendMessage(chatId, "Escolha o método de pagamento: PIX ou Cartão.")
-    .then(() => {
-      bot.once('message', (response) => {
-        const metodoPagamento = response.text.toLowerCase() === "cartão" ? "credit_card" : "pix";
-        const linkPagamento = gerarLinkPagamento(valor, descricao, "email_do_usuario@example.com", metodoPagamento);
-        
-        if (linkPagamento) {
-          bot.sendMessage(chatId, `Clique abaixo para adquirir o plano:`, {
-            reply_markup: {
-              inline_keyboard: [
-                [{ text: "Clique aqui e adquira agora!", url: linkPagamento }],
-              ],
-            },
-          });
-          salvarUsuario(userId, descricao, diasValidade); // Salva os dados do usuário
-        } else {
-          bot.sendMessage(chatId, "Erro ao gerar o link de pagamento. Tente novamente.");
-        }
-      });
+  bot.sendMessage(chatId, "Escolha o método de pagamento:", {
+    reply_markup: {
+      inline_keyboard: [
+        [{ text: "PIX", callback_data: "pix" }],
+        [{ text: "Cartão", callback_data: "cartao" }],
+      ],
+    },
+  }).then(() => {
+    // Aguardar a escolha de pagamento
+    bot.once("callback_query", (paymentChoice) => {
+      const metodoPagamento = paymentChoice.data === "cartao" ? "credit_card" : "pix";
+
+      gerarLinkPagamento(valor, descricao, "email_do_usuario@example.com", metodoPagamento)
+        .then((linkPagamento) => {
+          if (linkPagamento) {
+            bot.sendMessage(chatId, `Clique abaixo para adquirir o plano:`, {
+              reply_markup: {
+                inline_keyboard: [
+                  [{ text: "Clique aqui e adquira agora!", url: linkPagamento }],
+                ],
+              },
+            });
+            salvarUsuario(userId, descricao, diasValidade); // Salva os dados do usuário
+          } else {
+            bot.sendMessage(chatId, "Erro ao gerar o link de pagamento. Tente novamente.");
+          }
+        });
     });
+  });
 });
