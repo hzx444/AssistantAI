@@ -59,6 +59,29 @@ function verificarAcesso(userId, callback) {
   });
 }
 
+// Função para salvar os dados do usuário
+function salvarUsuario(userId, plano, diasValidade) {
+  const dataPagamento = new Date().toISOString();
+  const validoAte = new Date(Date.now() + diasValidade * 24 * 60 * 60 * 1000).toISOString();
+
+  const query = `
+    INSERT INTO usuarios (userId, plano, dataPagamento, validoAte)
+    VALUES (?, ?, ?, ?)
+    ON CONFLICT(userId) DO UPDATE SET
+      plano = excluded.plano,
+      dataPagamento = excluded.dataPagamento,
+      validoAte = excluded.validoAte
+  `;
+
+  db.run(query, [userId, plano, dataPagamento, validoAte], (err) => {
+    if (err) {
+      console.error("Erro ao salvar usuário:", err);
+    } else {
+      console.log(`Usuário ${userId} salvo com sucesso.`);
+    }
+  });
+}
+
 // Criar instância do bot do Telegram
 const bot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN, { polling: true });
 
@@ -89,27 +112,90 @@ bot.on("message", async (msg) => {
       const descricao = "Acesso ao bot por 30 dias"; // Descrição do pagamento
       const emailUsuario = msg.from.email || "email_do_usuario@example.com"; // Tenta capturar o email do usuário
 
-      const linkPagamento = await gerarLinkPagamento(valor, descricao, emailUsuario);
-      if (linkPagamento) {
-        bot.sendMessage(chatId, `Clique no link para pagar: ${linkPagamento}`);
-      } else {
-        bot.sendMessage(chatId, "Erro ao gerar o link de pagamento. Tente novamente.");
-      }
+      gerarLinkPagamento(valor, descricao, emailUsuario)
+        .then((linkPagamento) => {
+          if (linkPagamento) {
+            bot.sendMessage(chatId, `Clique no link para pagar: ${linkPagamento}`);
+          } else {
+            bot.sendMessage(chatId, "Erro ao gerar o link de pagamento. Tente novamente.");
+          }
+        })
+        .catch((error) => {
+          console.error("Erro ao gerar link de pagamento:", error);
+          bot.sendMessage(chatId, "Erro ao processar o pagamento. Tente novamente.");
+        });
       return;
     }
 
     // Resposta padrão usando a OpenAI
-    try {
-      const response = await openai.chat.completions.create({
+    openai.chat.completions
+      .create({
         model: "gpt-4-turbo",
         messages: [{ role: "user", content: text }],
+      })
+      .then((response) => {
+        const message = response.choices[0].message.content;
+        bot.sendMessage(chatId, message);
+      })
+      .catch((error) => {
+        console.error("Erro ao conectar com a OpenAI:", error);
+        bot.sendMessage(chatId, "Erro ao processar a resposta. Tente novamente.");
       });
-
-      const message = response.choices[0].message.content;
-      bot.sendMessage(chatId, message);
-    } catch (error) {
-      console.error("Erro ao conectar com a OpenAI:", error);
-      bot.sendMessage(chatId, "Erro ao processar a resposta. Tente novamente.");
-    }
   });
+});
+
+// Menu de planos no comando /start
+bot.onText(/\/start/, (msg) => {
+  const chatId = msg.chat.id;
+  const userId = msg.from.id.toString();
+
+  const options = {
+    reply_markup: {
+      inline_keyboard: [
+        [
+          { text: "Plano Semanal - R$ 10,00", callback_data: "plano_semanal" },
+          { text: "Plano Mensal - R$ 30,00", callback_data: "plano_mensal" },
+        ],
+        [
+          { text: "Plano Trimestral - R$ 80,00", callback_data: "plano_trimestral" },
+        ],
+      ],
+    },
+  };
+
+  bot.sendMessage(chatId, "Escolha o melhor plano para você e libere o assistente AI:", options);
+});
+
+// Tratar a escolha do plano
+bot.on("callback_query", async (callbackQuery) => {
+  const chatId = callbackQuery.message.chat.id;
+  const userId = callbackQuery.from.id.toString();
+  const plano = callbackQuery.data;
+
+  let valor, descricao, diasValidade;
+  switch (plano) {
+    case "plano_semanal":
+      valor = 10.0;
+      descricao = "Plano Semanal";
+      diasValidade = 7;
+      break;
+    case "plano_mensal":
+      valor = 30.0;
+      descricao = "Plano Mensal";
+      diasValidade = 30;
+      break;
+    case "plano_trimestral":
+      valor = 80.0;
+      descricao = "Plano Trimestral";
+      diasValidade = 90;
+      break;
+  }
+
+  const linkPagamento = await gerarLinkPagamento(valor, descricao, "email_do_usuario@example.com");
+  if (linkPagamento) {
+    bot.sendMessage(chatId, `Clique no link para pagar: ${linkPagamento}`);
+    salvarUsuario(userId, descricao, diasValidade); // Salva os dados do usuário
+  } else {
+    bot.sendMessage(chatId, "Erro ao gerar o link de pagamento. Tente novamente.");
+  }
 });
