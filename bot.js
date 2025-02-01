@@ -8,14 +8,6 @@ mercadopago.configure({
   access_token: process.env.MERCADOPAGO_ACCESS_TOKEN,
 });
 
-// Criar instância do bot do Telegram
-const bot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN, { polling: true });
-
-// Criar instância da OpenAI
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY, // Chave da API OpenAI
-});
-
 // Função para gerar link de pagamento
 async function gerarLinkPagamento(valor, descricao, emailUsuario) {
   try {
@@ -39,12 +31,28 @@ async function gerarLinkPagamento(valor, descricao, emailUsuario) {
     const response = await mercadopago.payment.create(paymentData);
     console.log("Resposta do Mercado Pago:", response);
 
-    return response.body.init_point; // Retorna o link de pagamento
+    // Verifica se o link de pagamento está na resposta
+    if (response.body && response.body.point_of_interaction && response.body.point_of_interaction.transaction_data) {
+      const linkPagamento = response.body.point_of_interaction.transaction_data.ticket_url;
+      console.log("Link de pagamento:", linkPagamento);
+      return linkPagamento;
+    } else {
+      console.error("Link de pagamento não encontrado na resposta:", response.body);
+      return null;
+    }
   } catch (error) {
     console.error("Erro ao gerar link de pagamento:", error);
     return null;
   }
 }
+
+// Criar instância do bot do Telegram
+const bot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN, { polling: true });
+
+// Criar instância da OpenAI
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY, // Chave da API OpenAI
+});
 
 // Quando o bot receber uma mensagem
 bot.on("message", async (msg) => {
