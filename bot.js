@@ -18,8 +18,13 @@ async function gerarLinkPagamento(valor, descricao, emailUsuario, metodoPagament
     console.log("Email do usuário:", emailUsuario);
     console.log("Método de pagamento:", metodoPagamento);
 
+    // Verifica se o valor foi passado corretamente
+    if (!valor || valor <= 0) {
+      throw new Error("Valor da transação inválido");
+    }
+
     const paymentData = {
-      transaction_amount: valor,
+      transaction_amount: valor, // Passando o valor corretamente
       description: descricao,
       payment_method_id: metodoPagamento, // Método de pagamento escolhido
       payer: {
@@ -200,6 +205,12 @@ bot.on("callback_query", async (callbackQuery) => {
     // Aguardar a escolha de pagamento
     bot.once("callback_query", (paymentChoice) => {
       const metodoPagamento = paymentChoice.data === "cartao" ? "credit_card" : "pix";
+
+      // Verifica se o valor é passado corretamente
+      if (!valor || valor <= 0) {
+        bot.sendMessage(chatId, "Erro: O valor de pagamento não foi definido corretamente.");
+        return;
+      }
 
       gerarLinkPagamento(valor, descricao, "email_do_usuario@example.com", metodoPagamento)
         .then((linkPagamento) => {
