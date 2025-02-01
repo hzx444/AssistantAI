@@ -1,3 +1,12 @@
+// Importando a biblioteca
+const TelegramBot = require('node-telegram-bot-api');
+
+// Definindo o token do bot (use seu próprio token)
+const token = 'SEU_TOKEN_AQUI';
+
+// Criando a instância do bot
+const bot = new TelegramBot(token, { polling: true });
+
 // Função para gerar link de pagamento
 async function gerarLinkPagamento(valor, descricao, emailUsuario, metodoPagamento) {
   try {
@@ -106,21 +115,4 @@ bot.on("callback_query", async (callbackQuery) => {
                 },
               });
             } else {
-              // Envia o link do pagamento para Cartão
-              bot.sendMessage(chatId, `Clique abaixo para adquirir o plano:`, {
-                reply_markup: {
-                  inline_keyboard: [
-                    [{ text: "Clique aqui e adquira agora!", url: linkPagamento }],
-                  ],
-                },
-              });
-            }
-
-            salvarUsuario(userId, descricao, diasValidade); // Salva os dados do usuário
-          } else {
-            bot.sendMessage(chatId, "Erro ao gerar o link de pagamento. Tente novamente.");
-          }
-        });
-    });
-  });
-});
+              // Envia o link do pagament
