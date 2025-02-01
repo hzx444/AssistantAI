@@ -10,7 +10,8 @@
     "dotenv": "^16.0.0",
     "node-telegram-bot-api": "^0.57.0",
     "openai": "^4.82.0",
-    "mercadopago": "^1.5.14"
+    "mercadopago": "^1.5.14",
+    "sqlite3": "^5.0.11"
   },
   "engines": {
     "node": "16.x"
