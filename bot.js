@@ -5,7 +5,7 @@ const OpenAI = require("openai");
 const TelegramBot = require("node-telegram-bot-api");
 
 // Criar instância do bot do Telegram
-const bot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN, { polling: true });
+const bot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN, { polling: true, autoStart: true });
 
 // Criar instância da OpenAI
 const openai = new OpenAI({
