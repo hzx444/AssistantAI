@@ -7,6 +7,7 @@ db.serialize(() => {
     CREATE TABLE IF NOT EXISTS usuarios (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       userId TEXT NOT NULL UNIQUE,
+      email TEXT NOT NULL,
       plano TEXT NOT NULL,
       dataPagamento TEXT NOT NULL,
       validoAte TEXT NOT NULL
