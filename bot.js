@@ -112,7 +112,7 @@ bot.on("message", async (msg) => {
 
     // Comando para gerar link de pagamento
     if (text.startsWith("/pagar")) {
-      const valor = 10.0; // Valor do pagamento
+      const valor = 1.0; // Valor do pagamento
       const descricao = "Acesso ao bot por 30 dias"; // Descrição do pagamento
       const emailUsuario = msg.from.email || "email_do_usuario@example.com"; // Tenta capturar o email do usuário
 
@@ -157,7 +157,7 @@ bot.onText(/\/start/, (msg) => {
     reply_markup: {
       inline_keyboard: [
         [
-          { text: "Plano Semanal - R$ 10,00", callback_data: "plano_semanal" },
+          { text: "Plano Semanal - R$ 1,00", callback_data: "plano_semanal" },
           { text: "Plano Mensal - R$ 30,00", callback_data: "plano_mensal" },
         ],
         [
@@ -179,7 +179,7 @@ bot.on("callback_query", async (callbackQuery) => {
   let valor, descricao, diasValidade;
   switch (plano) {
     case "plano_semanal":
-      valor = 10.0;
+      valor = 1.0;
       descricao = "Plano Semanal";
       diasValidade = 7;
       break;
