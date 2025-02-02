@@ -1,4 +1,5 @@
 require("dotenv").config();
+const express = require("express"); // Adicionado para o webhook
 const OpenAI = require("openai");
 const TelegramBot = require("node-telegram-bot-api");
 const mercadopago = require("mercadopago");
@@ -10,7 +11,7 @@ mercadopago.configure({
 });
 
 // Função para gerar link de pagamento
-async function gerarLinkPagamento(valor, descricao, emailUsuario) {
+async function gerarLinkPagamento(valor, descricao, emailUsuario, userId) {
   try {
     console.log("Gerando link de pagamento...");
     console.log("Valor:", valor);
@@ -23,6 +24,9 @@ async function gerarLinkPagamento(valor, descricao, emailUsuario) {
       payment_method_id: "pix", // Método de pagamento (PIX)
       payer: {
         email: emailUsuario, // Email do usuário
+      },
+      metadata: {
+        userId: userId, // Adiciona o userId ao metadata
       },
     };
 
@@ -112,7 +116,7 @@ bot.on("message", async (msg) => {
       const descricao = "Acesso ao bot por 30 dias"; // Descrição do pagamento
       const emailUsuario = msg.from.email || "email_do_usuario@example.com"; // Tenta capturar o email do usuário
 
-      gerarLinkPagamento(valor, descricao, emailUsuario)
+      gerarLinkPagamento(valor, descricao, emailUsuario, userId)
         .then((linkPagamento) => {
           if (linkPagamento) {
             bot.sendMessage(chatId, `Clique no link para pagar: ${linkPagamento}`);
@@ -191,11 +195,51 @@ bot.on("callback_query", async (callbackQuery) => {
       break;
   }
 
-  const linkPagamento = await gerarLinkPagamento(valor, descricao, "email_do_usuario@example.com");
+  const linkPagamento = await gerarLinkPagamento(valor, descricao, "email_do_usuario@example.com", userId);
   if (linkPagamento) {
     bot.sendMessage(chatId, `Clique no link para pagar: ${linkPagamento}`);
-    salvarUsuario(userId, descricao, diasValidade); // Salva os dados do usuário
   } else {
     bot.sendMessage(chatId, "Erro ao gerar o link de pagamento. Tente novamente.");
   }
+});
+
+// Configuração do webhook
+const app = express();
+app.use(express.json());
+
+// Rota para receber notificações do Mercado Pago
+app.post("/webhook", async (req, res) => {
+  const { data } = req.body;
+
+  if (data && data.id) {
+    const paymentId = data.id;
+
+    try {
+      // Verifica o status do pagamento
+      const payment = await mercadopago.payment.findById(paymentId);
+      const status = payment.body.status;
+
+      if (status === "approved") {
+        const userId = payment.body.metadata.userId; // Adiciona o userId ao metadata
+        const plano = payment.body.description;
+        const diasValidade = plano === "Plano Semanal" ? 7 : plano === "Plano Mensal" ? 30 : 90;
+
+        // Salva os dados do usuário
+        salvarUsuario(userId, plano, diasValidade);
+
+        console.log(`Pagamento aprovado para o usuário ${userId}.`);
+        bot.sendMessage(userId, "Pagamento aprovado! Agora você tem acesso ao bot.");
+      }
+    } catch (error) {
+      console.error("Erro ao processar webhook:", error);
+    }
+  }
+
+  res.status(200).send("OK");
+});
+
+// Inicia o servidor
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+  console.log(`Servidor rodando na porta ${PORT}`);
 });
