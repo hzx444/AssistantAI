@@ -1,55 +1,7 @@
 require("dotenv").config();
 const express = require("express"); // Adicionado para o webhook
-const OpenAI = require("openai");
 const TelegramBot = require("node-telegram-bot-api");
-const mercadopago = require("mercadopago");
 const db = require("./database"); // Importa o banco de dados
-
-// Configura o acesso ao Mercado Pago
-mercadopago.configure({
-  access_token: process.env.MERCADOPAGO_ACCESS_TOKEN,
-});
-
-// Função para gerar link de pagamento
-async function gerarLinkPagamento(valor, descricao, emailUsuario, userId) {
-  try {
-    console.log("Gerando link de pagamento...");
-    console.log("Valor:", valor);
-    console.log("Descrição:", descricao);
-    console.log("Email do usuário:", emailUsuario);
-
-    const paymentData = {
-      transaction_amount: valor,
-      description: descricao,
-      payment_method_id: "pix", // Método de pagamento (PIX)
-      payer: {
-        email: emailUsuario, // Email do usuário
-      },
-      metadata: {
-        userId: userId, // Adiciona o userId ao metadata
-      },
-    };
-
-    console.log("Dados do pagamento:", paymentData);
-
-    // Cria o pagamento
-    const response = await mercadopago.payment.create(paymentData);
-    console.log("Resposta do Mercado Pago:", response);
-
-    // Verifica se o link de pagamento está na resposta
-    if (response.body && response.body.point_of_interaction && response.body.point_of_interaction.transaction_data) {
-      const linkPagamento = response.body.point_of_interaction.transaction_data.ticket_url;
-      console.log("Link de pagamento:", linkPagamento);
-      return linkPagamento;
-    } else {
-      console.error("Link de pagamento não encontrado na resposta:", response.body);
-      return null;
-    }
-  } catch (error) {
-    console.error("Erro ao gerar link de pagamento:", error);
-    return null;
-  }
-}
 
 // Função para verificar se o usuário tem acesso
 function verificarAcesso(userId, callback) {
@@ -64,20 +16,21 @@ function verificarAcesso(userId, callback) {
 }
 
 // Função para salvar os dados do usuário
-function salvarUsuario(userId, plano, diasValidade) {
+function salvarUsuario(userId, email, plano, diasValidade) {
   const dataPagamento = new Date().toISOString();
   const validoAte = new Date(Date.now() + diasValidade * 24 * 60 * 60 * 1000).toISOString();
 
   const query = `
-    INSERT INTO usuarios (userId, plano, dataPagamento, validoAte)
-    VALUES (?, ?, ?, ?)
+    INSERT INTO usuarios (userId, email, plano, dataPagamento, validoAte)
+    VALUES (?, ?, ?, ?, ?)
     ON CONFLICT(userId) DO UPDATE SET
+      email = excluded.email,
       plano = excluded.plano,
       dataPagamento = excluded.dataPagamento,
       validoAte = excluded.validoAte
   `;
 
-  db.run(query, [userId, plano, dataPagamento, validoAte], (err) => {
+  db.run(query, [userId, email, plano, dataPagamento, validoAte], (err) => {
     if (err) {
       console.error("Erro ao salvar usuário:", err);
     } else {
@@ -89,11 +42,6 @@ function salvarUsuario(userId, plano, diasValidade) {
 // Criar instância do bot do Telegram
 const bot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN, { polling: true });
 
-// Criar instância da OpenAI
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY, // Chave da API OpenAI
-});
-
 // Quando o bot receber uma mensagem
 bot.on("message", async (msg) => {
   const chatId = msg.chat.id;
@@ -103,48 +51,15 @@ bot.on("message", async (msg) => {
   // Verifica se o usuário tem acesso
   verificarAcesso(userId, (temAcesso) => {
     if (!temAcesso) {
-      return bot.sendMessage(chatId, "Você não tem acesso ao bot. Use /start para escolher um plano.");
+      return bot.sendMessage(chatId, "Você não tem acesso ao bot. Envie o seu e-mail de compra para liberar o acesso.");
     }
 
     if (!text) {
       return bot.sendMessage(chatId, "Envie uma mensagem válida.");
     }
 
-    // Comando para gerar link de pagamento
-    if (text.startsWith("/pagar")) {
-      const valor = 1.0; // Valor do pagamento
-      const descricao = "Acesso ao bot por 30 dias"; // Descrição do pagamento
-      const emailUsuario = msg.from.email || "email_do_usuario@example.com"; // Tenta capturar o email do usuário
-
-      gerarLinkPagamento(valor, descricao, emailUsuario, userId)
-        .then((linkPagamento) => {
-          if (linkPagamento) {
-            bot.sendMessage(chatId, `Clique no link para pagar: ${linkPagamento}`);
-          } else {
-            bot.sendMessage(chatId, "Erro ao gerar o link de pagamento. Tente novamente.");
-          }
-        })
-        .catch((error) => {
-          console.error("Erro ao gerar link de pagamento:", error);
-          bot.sendMessage(chatId, "Erro ao processar o pagamento. Tente novamente.");
-        });
-      return;
-    }
-
     // Resposta padrão usando a OpenAI
-    openai.chat.completions
-      .create({
-        model: "gpt-4-turbo",
-        messages: [{ role: "user", content: text }],
-      })
-      .then((response) => {
-        const message = response.choices[0].message.content;
-        bot.sendMessage(chatId, message);
-      })
-      .catch((error) => {
-        console.error("Erro ao conectar com a OpenAI:", error);
-        bot.sendMessage(chatId, "Erro ao processar a resposta. Tente novamente.");
-      });
+    bot.sendMessage(chatId, "Você tem acesso ao assistente AI. Envie sua pergunta.");
   });
 });
 
@@ -195,44 +110,26 @@ bot.on("callback_query", async (callbackQuery) => {
       break;
   }
 
-  const linkPagamento = await gerarLinkPagamento(valor, descricao, "email_do_usuario@example.com", userId);
-  if (linkPagamento) {
-    bot.sendMessage(chatId, `Clique no link para pagar: ${linkPagamento}`);
-  } else {
-    bot.sendMessage(chatId, "Erro ao gerar o link de pagamento. Tente novamente.");
-  }
+  // Solicitar o e-mail para realizar o pagamento
+  bot.sendMessage(chatId, "Por favor, envie o seu e-mail para validar o pagamento.");
 });
 
-// Configuração do webhook
+// Recebe logs da Kirvano e processa os pagamentos
 const app = express();
 app.use(express.json());
 
-// Rota para receber notificações do Mercado Pago
+// Rota para receber notificações da Kirvano
 app.post("/webhook", async (req, res) => {
-  const { data } = req.body;
+  const { email, plano, userId, status } = req.body;
 
-  if (data && data.id) {
-    const paymentId = data.id;
+  if (status === "paid") {
+    // Salva os dados do usuário no banco
+    const diasValidade = plano === "Plano Semanal" ? 7 : plano === "Plano Mensal" ? 30 : 90;
+    salvarUsuario(userId, email, plano, diasValidade);
 
-    try {
-      // Verifica o status do pagamento
-      const payment = await mercadopago.payment.findById(paymentId);
-      const status = payment.body.status;
-
-      if (status === "approved") {
-        const userId = payment.body.metadata.userId; // Adiciona o userId ao metadata
-        const plano = payment.body.description;
-        const diasValidade = plano === "Plano Semanal" ? 7 : plano === "Plano Mensal" ? 30 : 90;
-
-        // Salva os dados do usuário
-        salvarUsuario(userId, plano, diasValidade);
-
-        console.log(`Pagamento aprovado para o usuário ${userId}.`);
-        bot.sendMessage(userId, "Pagamento aprovado! Agora você tem acesso ao bot.");
-      }
-    } catch (error) {
-      console.error("Erro ao processar webhook:", error);
-    }
+    console.log(`Pagamento confirmado para o usuário ${userId}.`);
+    // Notificar o usuário via Telegram
+    bot.sendMessage(userId, "Pagamento confirmado! Agora você tem acesso ao bot.");
   }
 
   res.status(200).send("OK");
